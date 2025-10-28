@@ -4,7 +4,9 @@ import logging
 
 class TelegramService:
     def __init__(self):
-        self.token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        # self.token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        self.token = "8392042106:AAGy5UHlJ9NMLuV9fKtDRLAISFdkdpUown0"
+print("✅ Токен установлен напрямую:", self.token[:20] + "...")
         self.api_url = f"https://api.telegram.org/bot{self.token}"
         logging.info("✅ Telegram service initialized")
     
