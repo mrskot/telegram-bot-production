@@ -3,6 +3,7 @@ import json
 import logging
 import threading
 import requests
+import time
 
 logging.basicConfig(level=logging.INFO)
 
@@ -34,7 +35,7 @@ class handler(BaseHTTPRequestHandler):
             
             logging.info(f"📨 Received Telegram update")
             
-            # Сразу отвечаем OK Telegram (в течение 10 секунд)
+            # Сразу отвечаем OK Telegram
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
@@ -69,7 +70,6 @@ class handler(BaseHTTPRequestHandler):
                     # Ответ на фото
                     elif 'photo' in message:
                         self._send_telegram_message(chat_id, "📸 Вижу фото! Начинаю обработку...")
-                        # Здесь позже добавим обработку фото
                         
                 elif 'callback_query' in update:
                     callback = update['callback_query']
@@ -99,8 +99,11 @@ class handler(BaseHTTPRequestHandler):
             
             if response.status_code == 200:
                 logging.info(f"✅ Message sent to {chat_id}: {text}")
+                return True
             else:
-                logging.error(f"❌ Telegram API error: {response.text}")
+                logging.error(f"❌ Telegram API error: {response.status_code} - {response.text}")
+                return False
                 
         except Exception as e:
             logging.error(f"❌ Error sending message: {e}")
+            return False
