@@ -61,57 +61,36 @@ class handler(BaseHTTPRequestHandler):
                     
                     logging.info(f"💬 Message from {chat_id}: {text}")
                     
-                    # Ответ на текстовые сообщения
-                    if text:
-                        response_text = f"🤖 Получил: '{text}'\nОтправьте фото документа 📸"
-                        success = self._send_telegram_message(chat_id, response_text)
-                        if success:
-                            logging.info(f"✅ Response sent successfully to {chat_id}")
-                        else:
-                            logging.error(f"❌ Failed to send response to {chat_id}")
+                    # Простой ответ - сразу отправляем
+                    response_text = "🤖 Бот работает! Отправьте фото документа 📸"
                     
-                    # Ответ на фото
-                    elif 'photo' in message:
-                        success = self._send_telegram_message(chat_id, "📸 Вижу фото! Обрабатываю...")
-                        if success:
-                            logging.info(f"✅ Photo response sent to {chat_id}")
+                    # Упрощенная отправка
+                    token = "8392042106:AAF9kqjIxgClFTilhenMe8NbSwI2GQqBJdA"
+                    url = f"https://api.telegram.org/bot{token}/sendMessage"
+                    
+                    payload = {
+                        'chat_id': chat_id, 
+                        'text': response_text
+                    }
+                    
+                    logging.info(f"🔄 Sending to Telegram...")
+                    
+                    try:
+                        response = requests.post(url, json=payload, timeout=5)
+                        logging.info(f"📨 Telegram response: {response.status_code}")
+                        
+                        if response.status_code == 200:
+                            logging.info(f"✅ Message sent to {chat_id}")
+                        else:
+                            logging.error(f"❌ Telegram error: {response.text}")
+                    except requests.exceptions.Timeout:
+                        logging.error("❌ Telegram API timeout")
+                    except Exception as e:
+                        logging.error(f"❌ Send error: {e}")
                         
             except Exception as e:
                 logging.error(f"❌ Error in async handler: {e}")
         
         thread = threading.Thread(target=process_update)
+        thread.daemon = True  # Делаем поток демоном
         thread.start()
-    
-    def _send_telegram_message(self, chat_id, text):
-        """Отправка сообщения в Telegram"""
-        try:
-            # Прямой токен бота
-            token = "8392042106:AAF9kqjIxgClFTilhenMe8NbSwI2GQqBJdA"
-            url = f"https://api.telegram.org/bot{token}/sendMessage"
-            
-            payload = {
-                'chat_id': chat_id, 
-                'text': text,
-                'parse_mode': 'HTML'
-            }
-            
-            logging.info(f"🔄 Sending message to Telegram API...")
-            logging.info(f"🔗 URL: {url}")
-            logging.info(f"📝 Payload: {payload}")
-            
-            response = requests.post(url, json=payload, timeout=10)
-            
-            logging.info(f"📨 Telegram API response: {response.status_code}")
-            logging.info(f"📄 Response text: {response.text}")
-            
-            if response.status_code == 200:
-                logging.info(f"✅ Message sent successfully to {chat_id}")
-                return True
-            else:
-                logging.error(f"❌ Telegram API error: {response.status_code}")
-                logging.error(f"❌ Error details: {response.text}")
-                return False
-                
-        except Exception as e:
-            logging.error(f"❌ Exception in send_message: {e}")
-            return False
