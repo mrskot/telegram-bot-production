@@ -3,7 +3,6 @@ import json
 import logging
 import threading
 import requests
-import time
 
 logging.basicConfig(level=logging.INFO)
 
@@ -46,7 +45,7 @@ class handler(BaseHTTPRequestHandler):
             self._handle_update_async(update)
             
         except Exception as e:
-            logging.error(f"❌ Error: {e}")
+            logging.error(f"❌ Error in webhook: {e}")
             self.send_response(500)
             self.end_headers()
     
@@ -64,18 +63,19 @@ class handler(BaseHTTPRequestHandler):
                     
                     # Ответ на текстовые сообщения
                     if text:
-                        response_text = f"🤖 Получил ваше сообщение: '{text}'\n\nОтправьте фото документа для распознавания 📸"
-                        self._send_telegram_message(chat_id, response_text)
+                        response_text = f"🤖 Получил: '{text}'\nОтправьте фото документа 📸"
+                        success = self._send_telegram_message(chat_id, response_text)
+                        if success:
+                            logging.info(f"✅ Response sent successfully to {chat_id}")
+                        else:
+                            logging.error(f"❌ Failed to send response to {chat_id}")
                     
                     # Ответ на фото
                     elif 'photo' in message:
-                        self._send_telegram_message(chat_id, "📸 Вижу фото! Начинаю обработку...")
+                        success = self._send_telegram_message(chat_id, "📸 Вижу фото! Обрабатываю...")
+                        if success:
+                            logging.info(f"✅ Photo response sent to {chat_id}")
                         
-                elif 'callback_query' in update:
-                    callback = update['callback_query']
-                    chat_id = callback['message']['chat']['id']
-                    self._send_telegram_message(chat_id, "🔄 Обрабатываю ваше действие...")
-                    
             except Exception as e:
                 logging.error(f"❌ Error in async handler: {e}")
         
@@ -95,15 +95,23 @@ class handler(BaseHTTPRequestHandler):
                 'parse_mode': 'HTML'
             }
             
+            logging.info(f"🔄 Sending message to Telegram API...")
+            logging.info(f"🔗 URL: {url}")
+            logging.info(f"📝 Payload: {payload}")
+            
             response = requests.post(url, json=payload, timeout=10)
             
+            logging.info(f"📨 Telegram API response: {response.status_code}")
+            logging.info(f"📄 Response text: {response.text}")
+            
             if response.status_code == 200:
-                logging.info(f"✅ Message sent to {chat_id}: {text}")
+                logging.info(f"✅ Message sent successfully to {chat_id}")
                 return True
             else:
-                logging.error(f"❌ Telegram API error: {response.status_code} - {response.text}")
+                logging.error(f"❌ Telegram API error: {response.status_code}")
+                logging.error(f"❌ Error details: {response.text}")
                 return False
                 
         except Exception as e:
-            logging.error(f"❌ Error sending message: {e}")
+            logging.error(f"❌ Exception in send_message: {e}")
             return False
