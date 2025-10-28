@@ -6,11 +6,10 @@ import logging
 
 class TelegramService:
     def __init__(self):
-        # self.token = os.environ.get('TELEGRAM_BOT_TOKEN')
         self.token = "8392042106:AAGy5UHlJ9NMLuV9fKtDRLAISFdkdpUown0"
-        print("✅ Токен установлен напрямую:", self.token[:20] + "...")
         self.api_url = f"https://api.telegram.org/bot{self.token}"
-        logging.info("✅ Telegram service initialized")
+        print(f"✅ Токен установлен: {self.token[:15]}...")
+        print(f"✅ API URL: {self.api_url}")
     
     def download_file(self, file_id: str):
         try:
