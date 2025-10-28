@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/**/*.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/webhook",
+      "dest": "/api/webhook.py",
+      "methods": ["GET", "POST"]
+    },
+    {
+      "src": "/health",
+      "dest": "/api/health.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/webhook.py"
+    }
+  ],
+  "env": {
+    "PYTHONPATH": "/var/task:/var/task/lib:/var/task/utils"
+  }
+}
