@@ -1,6 +1,7 @@
 from http.server import BaseHTTPRequestHandler
 import json
 import logging
+import threading
 
 logging.basicConfig(level=logging.INFO)
 
@@ -32,7 +33,7 @@ class handler(BaseHTTPRequestHandler):
             
             logging.info(f"📨 Received Telegram update")
             
-            # Всегда отвечаем OK Telegram
+            # Сразу отвечаем OK Telegram (в течение 10 секунд)
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
@@ -49,128 +50,46 @@ class handler(BaseHTTPRequestHandler):
     
     def _handle_update_async(self, update):
         """Асинхронная обработка обновления"""
-        import threading
-        
         def process_update():
             try:
-                # Импортируем здесь чтобы избежать циклических импортов
-                from lib.telegram import TelegramService
-                from lib.ocr import OCRService
-                from lib.deepseek import DeepSeekService
-                from lib.callback_handler import handle_callback_query
-                from lib.supabase_client import supabase_client
-                from utils.formatters import parse_extracted_data, format_data_for_display
-                
-                # Обработка callback от кнопок
-                if 'callback_query' in update:
-                    handle_callback_query(update['callback_query'])
-                    return
-                
-                # Обработка сообщений
+                # Базовый ответ на любое сообщение
                 if 'message' in update:
                     message = update['message']
                     chat_id = message['chat']['id']
                     
-                    # Текстовые сообщения
-                    if 'text' in message:
-                        self._handle_text_message(chat_id, message['text'])
-                        return
+                    # Простой ответ
+                    self._send_telegram_message(
+                        chat_id, 
+                        "🤖 Бот работает! Отправьте фото документа для распознавания."
+                    )
                     
-                    # Фото документов
-                    if 'photo' in message:
-                        self._handle_photo_message(chat_id, message['photo'])
-                        return
-                        
             except Exception as e:
                 logging.error(f"❌ Error in async handler: {e}")
         
         thread = threading.Thread(target=process_update)
         thread.start()
     
-    def _handle_text_message(self, chat_id, text):
-        """Обработка текстовых сообщений"""
+    def _send_telegram_message(self, chat_id, text):
+        """Отправка сообщения в Telegram"""
         try:
-            from lib.telegram import TelegramService
-            from lib.supabase_client import supabase_client
+            import requests
             
-            # Ищем активную сессию редактирования
-            for session_id, session in supabase_client.sessions.items():
-                if (session['chat_id'] == chat_id and 
-                    session.get('status') == 'awaiting_edit'):
-                    
-                    field_to_edit = session.get('field_to_edit')
-                    if field_to_edit:
-                        # Обновляем данные
-                        session['parsed_data'][field_to_edit] = text
-                        session['status'] = 'editing'
-                        session['field_to_edit'] = None
-                        
-                        # Показываем обновленные данные
-                        telegram = TelegramService()
-                        from utils.formatters import format_data_for_edit
-                        telegram.send_edit_view(chat_id, session_id, session['parsed_data'])
-                    return
-                    
+            # Прямой токен бота
+            token = "8392042106:AAF9kqjIxgClFTilhenMe8NbSwI2GQqBJdA"
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            
+            payload = {
+                'chat_id': chat_id, 
+                'text': text,
+                'parse_mode': 'HTML'
+            }
+            
+            response = requests.post(url, json=payload, timeout=10)
+            
+            if response.status_code == 200:
+                logging.info(f"✅ Message sent to {chat_id}")
+            else:
+                logging.error(f"❌ Telegram API error: {response.text}")
+                
         except Exception as e:
-            logging.error(f"❌ Error handling text: {e}")
-    
-    def _handle_photo_message(self, chat_id, photos):
-        """Обработка фото"""
-        try:
-            from lib.telegram import TelegramService
-            from lib.ocr import OCRService
-            from lib.deepseek import DeepSeekService
-            from lib.supabase_client import supabase_client
-            from utils.formatters import parse_extracted_data, format_data_for_display
-            
-            telegram = TelegramService()
-            ocr = OCRService()
-            deepseek = DeepSeekService()
-            
-            telegram.send_message(chat_id, "📥 Загружаю фото...")
-            
-            # Создаем сессию
-            session = supabase_client.create_session(chat_id)
-            session_id = session['id']
-            
-            # Берем фото
-            photo = photos[-2] if len(photos) >= 2 else photos[-1]
-            file_id = photo['file_id']
-            
-            # Скачиваем файл
-            telegram.send_message(chat_id, "🔍 Распознаю текст...")
-            file_content = telegram.download_file(file_id)
-            if not file_content:
-                telegram.send_message(chat_id, "❌ Ошибка загрузки файла")
-                return
-            
-            # OCR
-            extracted_text = ocr.extract_text_from_bytes(file_content)
-            if not extracted_text:
-                telegram.send_message(chat_id, "❌ Не удалось распознать текст")
-                return
-            
-            # AI анализ
-            telegram.send_message(chat_id, "🤖 Анализирую документ...")
-            analysis_result = deepseek.analyze_text(extracted_text)
-            
-            # Парсим результат
-            parsed_data = parse_extracted_data(analysis_result)
-            supabase_client.update_session(session_id, {
-                'extracted_data': analysis_result,
-                'parsed_data': parsed_data,
-                'status': 'pending_verification'
-            })
-            
-            # Показываем результаты
-            formatted_data = format_data_for_display(parsed_data)
-            telegram.send_message(
-                chat_id,
-                f"{formatted_data}\n\n<b>Проверьте данные:</b>",
-                telegram.create_verification_buttons(session_id)
-            )
-            
-        except Exception as e:
-            logging.error(f"❌ Error processing photo: {e}")
-            from lib.telegram import TelegramService
-            TelegramService().send_message(chat_id, "❌ Ошибка обработки фото")
+            logging.error(f"❌ Error sending message: {e}")
