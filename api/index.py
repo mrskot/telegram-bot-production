@@ -2,6 +2,7 @@ from http.server import BaseHTTPRequestHandler
 import json
 import logging
 import threading
+import requests
 
 logging.basicConfig(level=logging.INFO)
 
@@ -56,12 +57,24 @@ class handler(BaseHTTPRequestHandler):
                 if 'message' in update:
                     message = update['message']
                     chat_id = message['chat']['id']
+                    text = message.get('text', '')
                     
-                    # Простой ответ
-                    self._send_telegram_message(
-                        chat_id, 
-                        "🤖 Бот работает! Отправьте фото документа для распознавания."
-                    )
+                    logging.info(f"💬 Message from {chat_id}: {text}")
+                    
+                    # Ответ на текстовые сообщения
+                    if text:
+                        response_text = f"🤖 Получил ваше сообщение: '{text}'\n\nОтправьте фото документа для распознавания 📸"
+                        self._send_telegram_message(chat_id, response_text)
+                    
+                    # Ответ на фото
+                    elif 'photo' in message:
+                        self._send_telegram_message(chat_id, "📸 Вижу фото! Начинаю обработку...")
+                        # Здесь позже добавим обработку фото
+                        
+                elif 'callback_query' in update:
+                    callback = update['callback_query']
+                    chat_id = callback['message']['chat']['id']
+                    self._send_telegram_message(chat_id, "🔄 Обрабатываю ваше действие...")
                     
             except Exception as e:
                 logging.error(f"❌ Error in async handler: {e}")
@@ -72,8 +85,6 @@ class handler(BaseHTTPRequestHandler):
     def _send_telegram_message(self, chat_id, text):
         """Отправка сообщения в Telegram"""
         try:
-            import requests
-            
             # Прямой токен бота
             token = "8392042106:AAF9kqjIxgClFTilhenMe8NbSwI2GQqBJdA"
             url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -87,7 +98,7 @@ class handler(BaseHTTPRequestHandler):
             response = requests.post(url, json=payload, timeout=10)
             
             if response.status_code == 200:
-                logging.info(f"✅ Message sent to {chat_id}")
+                logging.info(f"✅ Message sent to {chat_id}: {text}")
             else:
                 logging.error(f"❌ Telegram API error: {response.text}")
                 
