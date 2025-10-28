@@ -1,102 +1,95 @@
-import requests
 import os
-import logging
-
-
+import requests
+import json
 
 class TelegramService:
     def __init__(self):
+        # ВРЕМЕННЫЙ ТОКЕН ДЛЯ ТЕСТА
         self.token = "8392042106:AAGy5UHlJ9NMLuV9fKtDRLAISFdkdpUown0"
         self.api_url = f"https://api.telegram.org/bot{self.token}"
-        print(f"✅ Токен установлен: {self.token[:15]}...")
-        print(f"✅ API URL: {self.api_url}")
-    
-    def download_file(self, file_id: str):
+        
+        print("=" * 50)
+        print("🟢 TelegramService инициализирован")
+        print(f"🔑 Токен: {self.token[:15]}...")
+        print(f"🌐 API URL: {self.api_url}")
+        print("=" * 50)
+
+    def send_message(self, chat_id, text):
+        """Отправка сообщения в Telegram с полной диагностикой"""
+        print("=" * 50)
+        print("🔍 ОТПРАВКА СООБЩЕНИЯ:")
+        print(f"📱 Chat ID: {chat_id}")
+        print(f"💬 Текст: {text}")
+        print(f"🔑 Токен: {self.token[:15]}...")
+        print(f"🌐 API URL: {self.api_url}")
+        print("=" * 50)
+
+        url = f"{self.api_url}/sendMessage"
+        payload = {
+            'chat_id': chat_id,
+            'text': text
+        }
+
         try:
-            file_info_url = f"{self.api_url}/getFile"
-            response = requests.post(file_info_url, data={"file_id": file_id})
-            file_info = response.json()
-            
-            if not file_info.get('ok'):
-                return None
-            
-            file_path = file_info['result']['file_path']
-            file_url = f"https://api.telegram.org/file/bot{self.token}/{file_path}"
-            
-            # Скачиваем файл
-            file_response = requests.get(file_url)
-            if file_response.status_code == 200:
-                logging.info(f"✅ File downloaded: {file_path}")
-                return file_response.content
-            return None
-            
-        except Exception as e:
-            logging.error(f"❌ Error downloading file: {e}")
-            return None
-    
-    def send_message(self, chat_id, text, reply_markup=None):
-        try:
-            url = f"{self.api_url}/sendMessage"
-            payload = {
-                'chat_id': chat_id, 
-                'text': text,
-                'parse_mode': 'HTML',
-                'disable_web_page_preview': True
-            }
-            
-            if reply_markup:
-                payload['reply_markup'] = reply_markup
-                
+            print("🟡 Отправляю запрос к Telegram API...")
             response = requests.post(url, json=payload, timeout=10)
-            success = response.status_code == 200
             
-            if success:
-                logging.info(f"✅ Message sent to {chat_id}")
+            print(f"✅ Ответ Telegram API:")
+            print(f"   Status Code: {response.status_code}")
+            print(f"   Response: {response.text}")
+            
+            if response.status_code == 200:
+                print("🟢 Сообщение успешно отправлено!")
+                return response.json()
             else:
-                logging.error(f"❌ Telegram API error: {response.text}")
-            
-            return success
-            
+                print(f"🔴 Ошибка Telegram API: {response.status_code}")
+                print(f"   Response: {response.text}")
+                return None
+                
+        except requests.exceptions.SSLError as e:
+            print(f"🔴 SSL Ошибка: {e}")
+            return None
+        except requests.exceptions.ConnectionError as e:
+            print(f"🔴 Ошибка подключения: {e}")
+            return None
+        except requests.exceptions.Timeout as e:
+            print(f"🔴 Таймаут: {e}")
+            return None
         except Exception as e:
-            logging.error(f"❌ Error sending message: {e}")
-            return False
+            print(f"🔴 Неизвестная ошибка: {e}")
+            return None
+
+    def handle_webhook(self, update_data):
+        """Обработка вебхука от Telegram"""
+        print("=" * 50)
+        print("📨 ПОЛУЧЕН ВЕБХУК ОТ TELEGRAM:")
+        print(f"📊 Данные: {json.dumps(update_data, indent=2, ensure_ascii=False)}")
+        print("=" * 50)
+
+        try:
+            # Извлекаем данные из вебхука
+            message = update_data.get('message', {})
+            chat_id = message.get('chat', {}).get('id')
+            text = message.get('text', '')
+            
+            if chat_id and text:
+                print(f"💬 Получено сообщение: '{text}' от chat_id: {chat_id}")
+                
+                # Отвечаем на сообщение
+                response_text = f"Вы сказали: {text}"
+                return self.send_message(chat_id, response_text)
+            else:
+                print("ℹ️ Нет текстового сообщения для обработки")
+                return None
+                
+        except Exception as e:
+            print(f"🔴 Ошибка обработки вебхука: {e}")
+            return None
+
+# Тестовый код для проверки
+if __name__ == "__main__":
+    print("🧪 ТЕСТИРУЕМ TelegramService...")
+    bot = TelegramService()
     
-    def send_edit_view(self, chat_id, session_id, parsed_data):
-        from utils.formatters import format_data_for_edit
-        text = format_data_for_edit(parsed_data)
-        keyboard = self.create_edit_buttons(session_id)
-        return self.send_message(chat_id, text, keyboard)
-    
-    def create_verification_buttons(self, session_id):
-        return {
-            "inline_keyboard": [
-                [
-                    {"text": "✏️ Скорректировать", "callback_data": f"verify_edit_{session_id}"},
-                    {"text": "✅ Всё верно", "callback_data": f"verify_ok_{session_id}"}
-                ]
-            ]
-        }
-    
-    def create_edit_buttons(self, session_id):
-        return {
-            "inline_keyboard": [
-                [
-                    {"text": "🏭 Участок", "callback_data": f"edit_field_{session_id}_Участок"},
-                    {"text": "🔧 Изделие", "callback_data": f"edit_field_{session_id}_Изделие"}
-                ],
-                [
-                    {"text": "📐 Номер чертежа", "callback_data": f"edit_field_{session_id}_Номер чертежа"},
-                    {"text": "🔢 Номер изделия", "callback_data": f"edit_field_{session_id}_Номер изделия"}
-                ],
-                [
-                    {"text": "✅ Завершить", "callback_data": f"edit_done_{session_id}"}
-                ]
-            ]
-        }
-    
-    def create_ok_button(self, session_id):
-        return {
-            "inline_keyboard": [
-                [{"text": "✅ ОК", "callback_data": f"edit_ok_{session_id}"}]
-            ]
-        }
+    # Тест отправки сообщения (закомментируй в продакшене)
+    # bot.send_message(123456789, "Тестовое сообщение от бота")
