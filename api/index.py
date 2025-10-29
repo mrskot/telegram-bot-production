@@ -3,8 +3,18 @@ import json
 import logging
 import os
 import requests
+from lib.telegram import TelegramService
+from lib.ocr import OCRService
+from lib.deepseek import DeepSeekService
+from lib.bitrix import BitrixService
 
 logging.basicConfig(level=logging.INFO)
+
+# Инициализация сервисов
+telegram = TelegramService()
+ocr = OCRService()
+deepseek = DeepSeekService()
+bitrix = BitrixService()
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -16,8 +26,7 @@ class handler(BaseHTTPRequestHandler):
             response = {
                 "status": "healthy", 
                 "service": "telegram-bot",
-                "platform": "vercel",
-                "bot_token_set": bool(os.getenv('BOT_TOKEN'))
+                "platform": "vercel"
             }
             self.wfile.write(json.dumps(response).encode())
             return
@@ -39,34 +48,57 @@ class handler(BaseHTTPRequestHandler):
             if 'message' in update:
                 message = update['message']
                 chat_id = message['chat']['id']
-                text = message.get('text', '')
                 
-                logging.info(f"💬 Message from {chat_id}: {text}")
+                # Обработка ТЕКСТА
+                if 'text' in message:
+                    text = message.get('text', '')
+                    logging.info(f"💬 Text from {chat_id}: {text}")
+                    
+                    response_text = "🤖 Бот работает! Отправьте фото маршрутной карты 📸"
+                    telegram.send_message(chat_id, response_text)
                 
-                # Используем переменную окружения
-                token = os.getenv('BOT_TOKEN')
-                if not token:
-                    logging.error("❌ BOT_TOKEN not set")
-                    self.send_response(200)
-                    self.end_headers()
-                    return
-                
-                response_text = "🤖 Бот работает! Отправьте фото 📸"
-                url = f"https://api.telegram.org/bot{token}/sendMessage"
-                
-                payload = {
-                    'chat_id': chat_id, 
-                    'text': response_text
-                }
-                
-                logging.info(f"🔄 Sending response...")
-                response = requests.post(url, json=payload, timeout=10)
-                logging.info(f"📨 Telegram API response: {response.status_code}")
-                
-                if response.status_code == 200:
-                    logging.info("✅ Message sent successfully!")
-                else:
-                    logging.error(f"❌ Telegram error: {response.text}")
+                # Обработка ФОТО
+                elif 'photo' in message:
+                    logging.info(f"📸 Photo from {chat_id}")
+                    
+                    # Уведомляем о начале обработки
+                    telegram.send_message(chat_id, "🔄 Начинаю обработку фото...")
+                    
+                    # Скачиваем фото
+                    photo = message['photo'][-1]  # Берем самое качественное
+                    file_id = photo['file_id']
+                    image_bytes = telegram.download_file(file_id)
+                    
+                    if image_bytes:
+                        # Распознаем текст
+                        telegram.send_message(chat_id, "🔍 Распознаю текст...")
+                        ocr_text = ocr.process_image(image_bytes)
+                        
+                        if ocr_text:
+                            # Анализируем через DeepSeek
+                            telegram.send_message(chat_id, "🤖 Анализирую данные...")
+                            parsed_data = deepseek.parse_route_card(ocr_text)
+                            
+                            if parsed_data:
+                                # Создаем заявку в Битрикс
+                                telegram.send_message(chat_id, "📝 Создаю заявку...")
+                                bitrix_result = bitrix.create_task(parsed_data)
+                                
+                                if bitrix_result:
+                                    telegram.send_message(
+                                        chat_id, 
+                                        f"✅ Заявка создана!\n"
+                                        f"🏭 Участок: {parsed_data.get('участок', 'Н/Д')}\n"
+                                        f"🔧 Изделие: {parsed_data.get('изделие', 'Н/Д')}"
+                                    )
+                                else:
+                                    telegram.send_message(chat_id, "❌ Ошибка создания заявки")
+                            else:
+                                telegram.send_message(chat_id, "❌ Не удалось проанализировать данные")
+                        else:
+                            telegram.send_message(chat_id, "❌ Не удалось распознать текст на фото")
+                    else:
+                        telegram.send_message(chat_id, "❌ Ошибка загрузки фото")
             
             # Всегда отвечаем OK Telegram
             self.send_response(200)
@@ -77,5 +109,5 @@ class handler(BaseHTTPRequestHandler):
             
         except Exception as e:
             logging.error(f"❌ Error: {e}")
-            self.send_response(200)  # Всегда 200 для Telegram
+            self.send_response(200)
             self.end_headers()
