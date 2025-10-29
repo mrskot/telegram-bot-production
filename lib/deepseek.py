@@ -43,7 +43,7 @@ class DeepSeekService:
             return f"Ошибка: {str(e)}"
     
     def _build_prompt(self, extracted_text: str) -> str:
-    return f"""
+        return f"""
 АНАЛИЗ МАРШРУТНОЙ КАРТЫ ПРОИЗВОДСТВЕННОГО ДОКУМЕНТА
 
 ТЕКСТ ДЛЯ АНАЛИЗА:
