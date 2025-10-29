@@ -17,7 +17,7 @@ ocr = OCRService()
 deepseek = DeepSeekService()
 bitrix = BitrixService()
 
-# Временное хранилище данных (в продакшене заменить на Redis/БД)
+# Временное хранилище данных
 temp_data_store = {}
 
 class handler(BaseHTTPRequestHandler):
@@ -50,11 +50,11 @@ class handler(BaseHTTPRequestHandler):
             
             # Обработка сообщений
             if 'message' in update:
-                await self._handle_message(update['message'])
+                self._handle_message(update['message'])
             
             # Обработка callback-ов (кнопок)
             elif 'callback_query' in update:
-                await self._handle_callback(update['callback_query'])
+                self._handle_callback(update['callback_query'])
             
             # Всегда отвечаем OK Telegram
             self.send_response(200)
@@ -68,7 +68,7 @@ class handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.end_headers()
     
-    async def _handle_message(self, message):
+    def _handle_message(self, message):
         """Обработка входящих сообщений"""
         chat_id = message['chat']['id']
         
@@ -78,16 +78,16 @@ class handler(BaseHTTPRequestHandler):
             logging.info(f"💬 Text from {chat_id}: {text}")
             
             if text.startswith('/'):
-                await self._handle_command(chat_id, text)
+                self._handle_command(chat_id, text)
             else:
                 response_text = "🤖 Отправьте фото маршрутной карты для создания заявки 📸"
                 telegram.send_message(chat_id, response_text)
         
         # Обработка ФОТО
         elif 'photo' in message:
-            await self._handle_photo(chat_id, message)
+            self._handle_photo(chat_id, message)
     
-    async def _handle_command(self, chat_id, text):
+    def _handle_command(self, chat_id, text):
         """Обработка команд"""
         if text == '/start':
             welcome_text = (
@@ -100,7 +100,7 @@ class handler(BaseHTTPRequestHandler):
             )
             telegram.send_message(chat_id, welcome_text)
     
-    async def _handle_photo(self, chat_id, message):
+    def _handle_photo(self, chat_id, message):
         """Обработка фотографий маршрутных карт"""
         try:
             logging.info(f"📸 Photo from {chat_id}")
@@ -151,13 +151,13 @@ class handler(BaseHTTPRequestHandler):
             }
             
             # Показываем данные для подтверждения
-            await self._show_confirmation(chat_id, session_id, parsed_data)
+            self._show_confirmation(chat_id, session_id, parsed_data)
             
         except Exception as e:
             logging.error(f"❌ Error processing photo: {e}")
             telegram.send_message(chat_id, "❌ Произошла ошибка при обработке")
     
-    async def _handle_callback(self, callback):
+    def _handle_callback(self, callback):
         """Обработка нажатий на кнопки"""
         try:
             chat_id = callback['message']['chat']['id']
@@ -165,27 +165,27 @@ class handler(BaseHTTPRequestHandler):
             
             if data.startswith('confirm_'):
                 session_id = data.replace('confirm_', '')
-                await self._create_bitrix_task(chat_id, session_id)
+                self._create_bitrix_task(chat_id, session_id)
             
             elif data.startswith('edit_'):
                 session_id = data.replace('edit_', '')
-                await self._start_editing(chat_id, session_id)
+                self._start_editing(chat_id, session_id)
             
             elif data.startswith('field_'):
                 parts = data.split('_')
                 session_id = parts[1]
                 field_name = parts[2]
-                await self._request_field_edit(chat_id, session_id, field_name)
+                self._request_field_edit(chat_id, session_id, field_name)
             
             elif data.startswith('save_'):
                 session_id = data.replace('save_', '')
-                await self._show_confirmation(chat_id, session_id)
+                self._show_confirmation(chat_id, session_id)
                 
         except Exception as e:
             logging.error(f"❌ Callback error: {e}")
             telegram.send_message(chat_id, "❌ Ошибка обработки запроса")
     
-    async def _show_confirmation(self, chat_id, session_id, parsed_data=None):
+    def _show_confirmation(self, chat_id, session_id, parsed_data=None):
         """Показ данных для подтверждения"""
         if not parsed_data:
             data = temp_data_store.get(session_id)
@@ -213,7 +213,7 @@ class handler(BaseHTTPRequestHandler):
         
         telegram.send_message(chat_id, confirmation_text, keyboard)
     
-    async def _start_editing(self, chat_id, session_id):
+    def _start_editing(self, chat_id, session_id):
         """Начало редактирования полей"""
         data = temp_data_store.get(session_id)
         if not data:
@@ -234,15 +234,20 @@ class handler(BaseHTTPRequestHandler):
         
         telegram.send_message(chat_id, "Выберите поле для редактирования:", keyboard)
     
-    async def _request_field_edit(self, chat_id, session_id, field_name):
+    def _request_field_edit(self, chat_id, session_id, field_name):
         """Запрос на редактирование конкретного поля"""
         telegram.send_message(
             chat_id, 
             f"Введите новое значение для поля '{field_name}':"
         )
-        # Здесь нужно сохранить состояние ожидания ввода
+        # Сохраняем состояние ожидания ввода
+        temp_data_store[f"editing_{chat_id}"] = {
+            'session_id': session_id,
+            'field_name': field_name,
+            'timestamp': time.time()
+        }
     
-    async def _create_bitrix_task(self, chat_id, session_id):
+    def _create_bitrix_task(self, chat_id, session_id):
         """Создание заявки в Битрикс"""
         try:
             data = temp_data_store.get(session_id)
@@ -312,17 +317,3 @@ class handler(BaseHTTPRequestHandler):
         except Exception as e:
             logging.error(f"❌ Error parsing analysis result: {e}")
             return None
-
-    def _save_temp_data(self, chat_id, data):
-        """Сохранение временных данных"""
-        temp_data_store[chat_id] = {
-            'data': data,
-            'timestamp': time.time()
-        }
-    
-    def _get_temp_data(self, chat_id):
-        """Получение временных данных"""
-        data = temp_data_store.get(chat_id)
-        if data and time.time() - data['timestamp'] < 3600:  # 1 час
-            return data['data']
-        return None
