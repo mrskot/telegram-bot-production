@@ -1,6 +1,7 @@
 from http.server import BaseHTTPRequestHandler
 import json
 import logging
+import os
 import requests
 
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +16,8 @@ class handler(BaseHTTPRequestHandler):
             response = {
                 "status": "healthy", 
                 "service": "telegram-bot",
-                "platform": "vercel"
+                "platform": "vercel",
+                "bot_token_set": bool(os.getenv('BOT_TOKEN'))
             }
             self.wfile.write(json.dumps(response).encode())
             return
@@ -33,7 +35,7 @@ class handler(BaseHTTPRequestHandler):
             
             logging.info(f"📨 Received Telegram update")
             
-            # Обрабатываем сообщение СРАЗУ (без потоков)
+            # Обрабатываем сообщение
             if 'message' in update:
                 message = update['message']
                 chat_id = message['chat']['id']
@@ -41,11 +43,15 @@ class handler(BaseHTTPRequestHandler):
                 
                 logging.info(f"💬 Message from {chat_id}: {text}")
                 
-                # ПРОСТОЙ ОТВЕТ - без сложной логики
-                response_text = "🤖 Бот работает! Отправьте фото 📸"
+                # Используем переменную окружения
+                token = os.getenv('BOT_TOKEN')
+                if not token:
+                    logging.error("❌ BOT_TOKEN not set")
+                    self.send_response(200)
+                    self.end_headers()
+                    return
                 
-                # Отправляем сообщение
-                token = "8392042106:AAF9kqjIxgClFTilhenMe8NbSwI2GQqBJdA"
+                response_text = "🤖 Бот работает! Отправьте фото 📸"
                 url = f"https://api.telegram.org/bot{token}/sendMessage"
                 
                 payload = {
@@ -54,7 +60,6 @@ class handler(BaseHTTPRequestHandler):
                 }
                 
                 logging.info(f"🔄 Sending response...")
-                
                 response = requests.post(url, json=payload, timeout=10)
                 logging.info(f"📨 Telegram API response: {response.status_code}")
                 
@@ -72,5 +77,5 @@ class handler(BaseHTTPRequestHandler):
             
         except Exception as e:
             logging.error(f"❌ Error: {e}")
-            self.send_response(500)
+            self.send_response(200)  # Всегда 200 для Telegram
             self.end_headers()
