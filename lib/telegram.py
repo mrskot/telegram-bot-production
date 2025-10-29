@@ -4,10 +4,16 @@ import logging
 
 class TelegramService:
     def __init__(self):
-        # ПРЯМАЯ ПОДСТАНОВКА токена (временно для тестирования)
-        self.token = "8392042106:AAF9kqjIxgClFTilhenMe8NbSwI2GQqBJdA"
+        # ИСПОЛЬЗУЕМ ПЕРЕМЕННУЮ ОКРУЖЕНИЯ
+        self.token = os.getenv('BOT_TOKEN')
+        if not self.token:
+            logging.error("❌ BOT_TOKEN not found in environment variables")
+            raise ValueError("BOT_TOKEN environment variable is required")
+        
         self.api_url = f"https://api.telegram.org/bot{self.token}"
-        logging.info("✅ Telegram service initialized with DIRECT token")
+        logging.info("✅ Telegram service initialized")
+    
+    # остальные методы без изменений...
     
     def download_file(self, file_id: str):
         try:
