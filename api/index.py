@@ -50,11 +50,11 @@ class handler(BaseHTTPRequestHandler):
             
             # Обработка сообщений
             if 'message' in update:
-                self._handle_message(update['message'])
+                self.handle_message(update['message'])
             
             # Обработка callback-ов (кнопок)
             elif 'callback_query' in update:
-                self._handle_callback(update['callback_query'])
+                self.handle_callback(update['callback_query'])
             
             # Всегда отвечаем OK Telegram
             self.send_response(200)
@@ -68,7 +68,7 @@ class handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.end_headers()
     
-    def _handle_message(self, message):
+    def handle_message(self, message):
         """Обработка входящих сообщений"""
         chat_id = message['chat']['id']
         
@@ -78,16 +78,21 @@ class handler(BaseHTTPRequestHandler):
             logging.info(f"💬 Text from {chat_id}: {text}")
             
             if text.startswith('/'):
-                self._handle_command(chat_id, text)
+                self.handle_command(chat_id, text)
             else:
-                response_text = "🤖 Отправьте фото маршрутной карты для создания заявки 📸"
-                telegram.send_message(chat_id, response_text)
+                # Проверяем, не ожидаем ли мы ввод для редактирования
+                editing_key = f"editing_{chat_id}"
+                if editing_key in temp_data_store:
+                    self.handle_field_edit(chat_id, text, editing_key)
+                else:
+                    response_text = "🤖 Отправьте фото маршрутной карты для создания заявки 📸"
+                    telegram.send_message(chat_id, response_text)
         
         # Обработка ФОТО
         elif 'photo' in message:
-            self._handle_photo(chat_id, message)
+            self.handle_photo(chat_id, message)
     
-    def _handle_command(self, chat_id, text):
+    def handle_command(self, chat_id, text):
         """Обработка команд"""
         if text == '/start':
             welcome_text = (
@@ -100,7 +105,7 @@ class handler(BaseHTTPRequestHandler):
             )
             telegram.send_message(chat_id, welcome_text)
     
-    def _handle_photo(self, chat_id, message):
+    def handle_photo(self, chat_id, message):
         """Обработка фотографий маршрутных карт"""
         try:
             logging.info(f"📸 Photo from {chat_id}")
@@ -136,7 +141,7 @@ class handler(BaseHTTPRequestHandler):
                 return
             
             # Парсим результат анализа
-            parsed_data = self._parse_analysis_result(analysis_result)
+            parsed_data = self.parse_analysis_result(analysis_result)
             
             if not parsed_data:
                 telegram.send_message(chat_id, "❌ Не удалось извлечь структурированные данные")
@@ -151,13 +156,13 @@ class handler(BaseHTTPRequestHandler):
             }
             
             # Показываем данные для подтверждения
-            self._show_confirmation(chat_id, session_id, parsed_data)
+            self.show_confirmation(chat_id, session_id, parsed_data)
             
         except Exception as e:
             logging.error(f"❌ Error processing photo: {e}")
             telegram.send_message(chat_id, "❌ Произошла ошибка при обработке")
     
-    def _handle_callback(self, callback):
+    def handle_callback(self, callback):
         """Обработка нажатий на кнопки"""
         try:
             chat_id = callback['message']['chat']['id']
@@ -165,27 +170,48 @@ class handler(BaseHTTPRequestHandler):
             
             if data.startswith('confirm_'):
                 session_id = data.replace('confirm_', '')
-                self._create_bitrix_task(chat_id, session_id)
+                self.create_bitrix_task(chat_id, session_id)
             
             elif data.startswith('edit_'):
                 session_id = data.replace('edit_', '')
-                self._start_editing(chat_id, session_id)
+                self.start_editing(chat_id, session_id)
             
             elif data.startswith('field_'):
                 parts = data.split('_')
                 session_id = parts[1]
                 field_name = parts[2]
-                self._request_field_edit(chat_id, session_id, field_name)
+                self.request_field_edit(chat_id, session_id, field_name)
             
             elif data.startswith('save_'):
                 session_id = data.replace('save_', '')
-                self._show_confirmation(chat_id, session_id)
+                self.show_confirmation(chat_id, session_id)
                 
         except Exception as e:
             logging.error(f"❌ Callback error: {e}")
             telegram.send_message(chat_id, "❌ Ошибка обработки запроса")
     
-    def _show_confirmation(self, chat_id, session_id, parsed_data=None):
+    def handle_field_edit(self, chat_id, new_value, editing_key):
+        """Обработка ввода нового значения для поля"""
+        try:
+            editing_data = temp_data_store[editing_key]
+            session_id = editing_data['session_id']
+            field_name = editing_data['field_name']
+            
+            # Обновляем значение в данных
+            if session_id in temp_data_store:
+                temp_data_store[session_id]['parsed_data'][field_name] = new_value
+            
+            # Удаляем состояние редактирования
+            del temp_data_store[editing_key]
+            
+            # Показываем обновленные данные
+            self.show_confirmation(chat_id, session_id)
+            
+        except Exception as e:
+            logging.error(f"❌ Field edit error: {e}")
+            telegram.send_message(chat_id, "❌ Ошибка при редактировании")
+    
+    def show_confirmation(self, chat_id, session_id, parsed_data=None):
         """Показ данных для подтверждения"""
         if not parsed_data:
             data = temp_data_store.get(session_id)
@@ -213,7 +239,7 @@ class handler(BaseHTTPRequestHandler):
         
         telegram.send_message(chat_id, confirmation_text, keyboard)
     
-    def _start_editing(self, chat_id, session_id):
+    def start_editing(self, chat_id, session_id):
         """Начало редактирования полей"""
         data = temp_data_store.get(session_id)
         if not data:
@@ -234,7 +260,7 @@ class handler(BaseHTTPRequestHandler):
         
         telegram.send_message(chat_id, "Выберите поле для редактирования:", keyboard)
     
-    def _request_field_edit(self, chat_id, session_id, field_name):
+    def request_field_edit(self, chat_id, session_id, field_name):
         """Запрос на редактирование конкретного поля"""
         telegram.send_message(
             chat_id, 
@@ -247,7 +273,7 @@ class handler(BaseHTTPRequestHandler):
             'timestamp': time.time()
         }
     
-    def _create_bitrix_task(self, chat_id, session_id):
+    def create_bitrix_task(self, chat_id, session_id):
         """Создание заявки в Битрикс"""
         try:
             data = temp_data_store.get(session_id)
@@ -285,7 +311,7 @@ class handler(BaseHTTPRequestHandler):
             logging.error(f"❌ Bitrix task creation error: {e}")
             telegram.send_message(chat_id, "❌ Ошибка при создании заявки")
     
-    def _parse_analysis_result(self, analysis_text: str) -> dict:
+    def parse_analysis_result(self, analysis_text):
         """Парсинг результата анализа DeepSeek"""
         try:
             parsed_data = {}
